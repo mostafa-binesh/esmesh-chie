@@ -1,0 +1,1 @@
+from naft_khabar.wsgi import application

@@ -1,0 +1,19 @@
+# todo:
+- in get all news
+-- tag and other unnecessary fields should be removed
+
+# todo warning
+- create comment should be a child of news endpoints
+
+
+
+# todo: admin panel
+- after implementing text editor and media uploader, create a background-job which
+-- searches for all media in the news' bodies and if any media existed in the folder but not in the media, delete it
+
+
+
+
+# todo: 6/11/2024 >> DONE
+sort the comments in news serializer based on created_at
+in comment serializer, if comment.user exists, set user's fullName to comment.user_full_name
