@@ -25,7 +25,15 @@ SECRET_KEY = 'django-insecure-lp9@@yfj=pnr$!4!9&#)o8z+)4m7aj(hrc)bhxa40ojxic4tsg
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['admin.naftkhabar.com', 'dara.naftkhabar.com', 'naftkhabar.com', 'naftkhabar.news', 'localhost', '127.0.0.1', '192.168.1.10']
+ALLOWED_HOSTS = ['admin.naftkhabar.com',
+                 'dara.naftkhabar.com',
+                  'naftkhabar.com',
+                  'naftkhabar.news',
+                  'localhost',
+                  '127.0.0.1',
+                  '192.168.1.10',
+                  '65.109.189.219'
+                  ]
 
 from corsheaders.defaults import default_headers
 
@@ -48,6 +56,7 @@ cors_list = [
     'https://naftkhabar.news',
     'http://192.168.1.10',
     'http://192.168.1.26',
+    'http://65.109.189.219',
 ]
 CORS_ALLOW_CREDENTIALS = True  # Allow credentials to be included with requests
 CORS_ORIGIN_WHITELIST = cors_list  # Ensure this only lists allowed origins
