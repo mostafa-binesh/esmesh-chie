@@ -57,6 +57,7 @@ cors_list = [
     'http://192.168.1.10',
     'http://192.168.1.26',
     'http://65.109.189.219',
+    'http://65.109.189.219:8001'
 ]
 CORS_ALLOW_CREDENTIALS = True  # Allow credentials to be included with requests
 CORS_ORIGIN_WHITELIST = cors_list  # Ensure this only lists allowed origins
