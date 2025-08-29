@@ -3,7 +3,7 @@ version: '3.8'
 services:
   db:
     image: postgres:13
-    container_name: naft_khabar_db
+    container_name: esmesh_chie_db
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -20,7 +20,7 @@ services:
 
   web:
     build: .
-    container_name: naft_khabar_web
+    container_name: esmesh_chie_web
     command: python manage.py runserver 0.0.0.0:8000
     volumes:
       - .:/app
