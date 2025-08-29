@@ -152,8 +152,10 @@ import psycopg2
 conn = psycopg2.connect(
     dbname='bank',
     user='postgres',
+    # password='admin',
     password='MostafABinesh#1UbiRock4Ever!',
     host='65.109.189.219',
+    # host='localhost',
     port='5432'
 )
 conn.autocommit = True

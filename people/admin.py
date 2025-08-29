@@ -82,18 +82,19 @@ class PhoneNumberAdmin(admin.ModelAdmin):
             source=obj.source
         ).values_list('number', flat=True)
         return '|'.join(numbers)
+
     get_numbers.short_description = 'Phone Numbers'
 
     def save_model(self, request, obj, form, change):
         numbers = form.cleaned_data.get('numbers', '').split('|')
         numbers = [n.strip() for n in numbers if n.strip()]
-        
+
         # Always delete existing numbers for this person/source
         PhoneNumber.objects.filter(
             person=obj.person,
             source=obj.source
         ).delete()
-        
+
         # Create new records for each number
         for number in numbers:
             PhoneNumber.objects.create(
@@ -119,6 +120,8 @@ def encode_decode(value, source_encoding):
         return value.encode(source_encoding, errors='ignore').decode('utf-8', errors='ignore').strip()
     except (UnicodeEncodeError, UnicodeDecodeError):
         return value.strip()  # Return trimmed original if encoding fails
+
+
 def _open_rows(file_path):
     _, ext = os.path.splitext(file_path.lower())
     if ext in ['.csv', '.txt']:
@@ -132,18 +135,20 @@ def _open_rows(file_path):
         last_err = None
         for enc in encodings:
             try:
-                df = pd.read_csv(file_path, encoding=enc, dtype=str, keep_default_na=False)
+                df = pd.read_csv(file_path, dtype=str, keep_default_na=False)
                 # Ensure strings and trimmed
-                df = df.apply(lambda col: col.map(lambda v: encode_decode(v, enc)) if col.dtype == "object" else col)                # df = df.applymap(lambda v: (str(v).strip() if v is not None else ''))
+                # df = df.apply(lambda col: col.map(lambda v: encode_decode(v, enc)) if col.dtype == "object" else col)                # df = df.applymap(lambda v: (str(v).strip() if v is not None else ''))
                 rows = [list(df.columns)] + df.values.tolist()
                 return rows
             except Exception as e:
                 last_err = e
             raise ValueError(f'Unable to read CSV with supported encodings: {last_err}')
     elif ext in ['.xlsx', '.xlsm']:
+        raise NotImplementedError
         try:
             df = pd.read_excel(file_path, dtype=str, engine='openpyxl')
-            df = df.fillna('').applymap(lambda v: (str(v).strip().encode('windows-1252').decode('utf-8') if v is not None else ''))
+            df = df.fillna('').applymap(
+                lambda v: (str(v).strip().encode('windows-1252').decode('utf-8') if v is not None else ''))
             rows = [list(df.columns)] + df.values.tolist()
             return rows
         except Exception as e:
@@ -171,12 +176,10 @@ def _fix_mojibake_text(value: str) -> str:
     """
     if not value:
         return value
-    if any(ch in value for ch in ['Ø', 'Ù', 'Ð', 'Â']):
-        try:
-            return value.encode('latin-1', errors='ignore').decode('utf-8', errors='ignore')
-        except Exception:
-            return value
-    return value
+    try:
+        return value.encode('windows-1252').decode('utf-8')
+    except Exception:
+        return value
 
 
 def import_melli_file(file_path: str, source: str) -> tuple[int, int]:
@@ -248,19 +251,21 @@ def import_melli_file(file_path: str, source: str) -> tuple[int, int]:
                     source=source,
                 )
 
-        if mobile_raw:
-            # Split multiple numbers by pipe
-            mobiles = mobile_raw.split('|')
-            for mobile in mobiles:
-                mobile = ''.join(ch for ch in mobile if ch.isdigit())
-                if mobile:
-                    # Use update_or_create with new unique constraint
-                    PhoneNumber.objects.update_or_create(
-                        number=mobile,
-                        person=person,
-                        source=source,
-                        defaults={}
-                    )
+            if mobile_raw:
+                # Split multiple numbers by pipe
+                mobiles = mobile_raw.split('|')
+                for mobile in mobiles:
+                    mobile = ''.join(ch for ch in mobile if ch.isdigit())
+                    if mobile:
+                        if mobile[0] != '0':
+                            mobile = '0' + mobile
+                        # Use update_or_create with new unique constraint
+                        PhoneNumber.objects.update_or_create(
+                            number=mobile,
+                            person=person,
+                            source=source,
+                            defaults={}
+                        )
 
         return inserted, updated
     except Exception as e:
