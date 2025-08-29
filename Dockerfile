@@ -1,5 +1,6 @@
 # Use official Python runtime as base image
-FROM python:3.10-slim-bullseye
+FROM python:3.12.5-slim-bullseye
+
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE 1
