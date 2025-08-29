@@ -142,7 +142,7 @@ def _open_rows(file_path):
                 return rows
             except Exception as e:
                 last_err = e
-            raise ValueError(f'Unable to read CSV with supported encodings: {last_err}')
+        raise ValueError(f'Unable to read CSV with supported encodings: {last_err}')
     elif ext in ['.xlsx', '.xlsm']:
         raise NotImplementedError
         try:
