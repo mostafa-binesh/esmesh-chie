@@ -32,7 +32,8 @@ ALLOWED_HOSTS = ['admin.naftkhabar.com',
                   'localhost',
                   '127.0.0.1',
                   '192.168.1.10',
-                  '65.109.189.219'
+                  '65.109.189.219',
+                  '65.109.189.219:8001'
                   ]
 
 from corsheaders.defaults import default_headers
