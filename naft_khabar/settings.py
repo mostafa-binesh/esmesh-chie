@@ -147,30 +147,50 @@ WSGI_APPLICATION = 'naft_khabar.wsgi.application'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
 import psycopg2
+from django.db.utils import OperationalError
 
-# First connect to bank database to create schema if needed
-conn = psycopg2.connect(
-    dbname='bank',
-    user='postgres',
-    # password='admin',
-    password='MostafABinesh#1UbiRock4Ever!',
-    host='65.109.189.219',
-    # host='localhost',
-    port='5432'
-)
-conn.autocommit = True
-with conn.cursor() as cursor:
-    cursor.execute("CREATE SCHEMA IF NOT EXISTS esmesh_chie")
-conn.close()
+# Database initialization with environment variables
+try:
+    conn = psycopg2.connect(
+        dbname=os.environ.get('POSTGRES_NAME', 'postgres'),  # Connect to default DB first
+        user=os.environ.get('POSTGRES_USER', 'postgres'),
+        password=os.environ.get('POSTGRES_PASSWORD', ''),
+        host=os.environ.get('POSTGRES_HOST', 'db'),
+        port=os.environ.get('POSTGRES_PORT', '5432')
+    )
+    conn.autocommit = True
+    
+    # Create database if not exists
+    with conn.cursor() as cursor:
+        cursor.execute(f"SELECT 1 FROM pg_database WHERE datname = '{os.environ.get('POSTGRES_NAME', 'naft_khabar')}'")
+        if not cursor.fetchone():
+            cursor.execute(f"CREATE DATABASE {os.environ.get('POSTGRES_NAME', 'naft_khabar')}")
+    
+    # Connect to target database to create schema
+    conn = psycopg2.connect(
+        dbname=os.environ.get('POSTGRES_NAME', 'naft_khabar'),
+        user=os.environ.get('POSTGRES_USER', 'postgres'),
+        password=os.environ.get('POSTGRES_PASSWORD', ''),
+        host=os.environ.get('POSTGRES_HOST', 'db'),
+        port=os.environ.get('POSTGRES_PORT', '5432')
+    )
+    conn.autocommit = True
+    with conn.cursor() as cursor:
+        cursor.execute("CREATE SCHEMA IF NOT EXISTS esmesh_chie")
+    conn.close()
+except OperationalError as e:
+    print(f"Database initialization error: {e}")
+except psycopg2.Error as e:
+    print(f"PostgreSQL error: {e}")
 
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'bank',
-        'USER': 'postgres',
-        'PASSWORD': 'MostafABinesh#1UbiRock4Ever!',
-        'HOST': '65.109.189.219',
-        'PORT': '5432',
+        'NAME': os.environ.get('POSTGRES_NAME'),
+        'USER': os.environ.get('POSTGRES_USER'),
+        'PASSWORD': os.environ.get('POSTGRES_PASSWORD'),
+        'HOST': os.environ.get('POSTGRES_HOST', 'db'),
+        'PORT': os.environ.get('POSTGRES_PORT', '5432'),
         'OPTIONS': {
             'options': '-c search_path=esmesh_chie,public',
             'client_encoding': 'UTF8'
