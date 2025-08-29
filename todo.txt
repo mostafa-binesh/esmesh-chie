@@ -17,3 +17,6 @@
 # todo: 6/11/2024 >> DONE
 sort the comments in news serializer based on created_at
 in comment serializer, if comment.user exists, set user's fullName to comment.user_full_name
+
+
+a test for todo.txt
