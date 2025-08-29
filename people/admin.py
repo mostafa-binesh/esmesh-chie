@@ -135,7 +135,7 @@ def _open_rows(file_path):
         last_err = None
         for enc in encodings:
             try:
-                df = pd.read_csv(file_path, dtype=str, keep_default_na=False)
+                df = pd.read_csv(file_path, encoding_errors='ignore', dtype=str, keep_default_na=False)
                 # Ensure strings and trimmed
                 # df = df.apply(lambda col: col.map(lambda v: encode_decode(v, enc)) if col.dtype == "object" else col)                # df = df.applymap(lambda v: (str(v).strip() if v is not None else ''))
                 rows = [list(df.columns)] + df.values.tolist()
