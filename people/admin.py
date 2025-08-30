@@ -183,90 +183,182 @@ def _fix_mojibake_text(value: str) -> str:
 
 
 def import_melli_file(file_path: str, source: str) -> tuple[int, int]:
-    rows = _open_rows(file_path)
     inserted = 0
     updated = 0
-    # Detect header row
-    start_idx = 1 if rows and rows[0] and any(
-        isinstance(cell, str) and any(h in cell.upper() for h in ['NATIONAL', 'CARD', 'FULL', 'BIRTH', 'MOBILE'])
-        for cell in rows[0]
-    ) else 0
-    print(f"rows length: {len(rows)}")
+    _, ext = os.path.splitext(file_path.lower())
+    
     try:
-        for row in rows[start_idx:]:
-            # print('new row', datetime.now())
-            if not row:
-                continue
-            national_code = (row[0] or '').strip() if len(row) > 0 else ''
-            card_no_raw = row[1] if len(row) > 1 else ''
-            full_name = _fix_mojibake_text((row[2] or '').strip()) if len(row) > 2 else ''
-            birth_date_raw = (row[3] or '').strip() if len(row) > 3 else ''
-            mobile_raw = (row[4] or '').strip() if len(row) > 4 else ''
-
-            first_name = ''
-            last_name = ''
-            # Keep current behavior: store full name in first_name if requested earlier by user
-            if full_name:
-                first_name = full_name
-                last_name = None
-
-            birthdate = None
-            if birth_date_raw:
-                date_val = str(birth_date_raw).replace('/', '-')
-                try:
-                    birthdate = datetime.strptime(date_val, '%Y-%m-%d').date()
-                except Exception:
-                    birthdate = None
-
-            card_number = _normalize_card(card_no_raw)
-
-            if not national_code:
-                continue
-
-            if len(national_code) > 10:
-                print(f"national code of {national_code} is too long")
-                continue
-
-            if len(card_number) > 16:
-                print(f"national code of {national_code} is too long")
-                continue
-
-            person, created = Person.objects.update_or_create(
-                defaults={
-                    'first_name': first_name,
-                    'last_name': last_name,
-                    'birthdate': birthdate,
-                    'source': source,
-                },
-                national_code=national_code,
-                source=source,
+        # Process CSV files in chunks
+        if ext in ['.csv', '.txt']:
+            # Detect header row by reading first row
+            with open(file_path, 'r', encoding='utf-8-sig', errors='ignore') as f:
+                first_line = f.readline().strip()
+            has_header = any(
+                word in first_line.upper() 
+                for word in ['NATIONAL', 'CARD', 'FULL', 'BIRTH', 'MOBILE']
             )
-            inserted += 1 if created else 0
-            updated += 0 if created else 1
+            
+            # Process in chunks of 10,000 rows
+            chunk_size = 10000
+            for chunk in pd.read_csv(
+                file_path,
+                chunksize=chunk_size,
+                header=0 if has_header else None,
+                dtype=str,
+                keep_default_na=False,
+                encoding_errors='ignore'
+            ):
+                for _, row in chunk.iterrows():
+                    row = row.tolist()
+                    national_code = (row[0] or '').strip() if len(row) > 0 else ''
+                    card_no_raw = row[1] if len(row) > 1 else ''
+                    full_name = _fix_mojibake_text((row[2] or '').strip()) if len(row) > 2 else ''
+                    birth_date_raw = (row[3] or '').strip() if len(row) > 3 else ''
+                    mobile_raw = (row[4] or '').strip() if len(row) > 4 else ''
 
-            if card_number:
-                CreditCard.objects.update_or_create(
-                    defaults={'person': person, 'source': source},
-                    card_number=card_number,
-                    source=source,
-                )
+                    first_name = ''
+                    last_name = ''
+                    if full_name:
+                        first_name = full_name
+                        last_name = None
 
-            if mobile_raw:
-                # Split multiple numbers by pipe
-                mobiles = mobile_raw.split('|')
-                for mobile in mobiles:
-                    mobile = ''.join(ch for ch in mobile if ch.isdigit())
-                    if mobile:
-                        if mobile[0] != '0':
-                            mobile = '0' + mobile
-                        # Use update_or_create with new unique constraint
-                        PhoneNumber.objects.update_or_create(
-                            number=mobile,
-                            person=person,
+                    birthdate = None
+                    if birth_date_raw:
+                        date_val = str(birth_date_raw).replace('/', '-')
+                        try:
+                            birthdate = datetime.strptime(date_val, '%Y-%m-%d').date()
+                        except Exception:
+                            birthdate = None
+
+                    card_number = _normalize_card(card_no_raw)
+
+                    if not national_code:
+                        continue
+
+                    if len(national_code) > 10:
+                        print(f"national code of {national_code} is too long")
+                        continue
+
+                    if len(card_number) > 16:
+                        print(f"card number of {card_number} is too long")
+                        continue
+
+                    person, created = Person.objects.update_or_create(
+                        defaults={
+                            'first_name': first_name,
+                            'last_name': last_name,
+                            'birthdate': birthdate,
+                            'source': source,
+                        },
+                        national_code=national_code,
+                        source=source,
+                    )
+                    inserted += 1 if created else 0
+                    updated += 0 if created else 1
+
+                    if card_number:
+                        CreditCard.objects.update_or_create(
+                            defaults={'person': person, 'source': source},
+                            card_number=card_number,
                             source=source,
-                            defaults={}
                         )
 
+                    if mobile_raw:
+                        mobiles = mobile_raw.split('|')
+                        for mobile in mobiles:
+                            mobile = ''.join(ch for ch in mobile if ch.isdigit())
+                            if mobile:
+                                if mobile[0] != '0':
+                                    mobile = '0' + mobile
+                                PhoneNumber.objects.update_or_create(
+                                    number=mobile,
+                                    person=person,
+                                    source=source,
+                                    defaults={}
+                                )
+
+        # Handle Excel files in chunks
+        elif ext in ['.xlsx', '.xlsm']:
+            chunk_size = 10000
+            for chunk in pd.read_excel(
+                file_path,
+                chunksize=chunk_size,
+                dtype=str,
+                keep_default_na=False,
+                engine='openpyxl'
+            ):
+                for _, row in chunk.iterrows():
+                    row = row.tolist()
+                    national_code = (row[0] or '').strip() if len(row) > 0 else ''
+                    card_no_raw = row[1] if len(row) > 1 else ''
+                    full_name = _fix_mojibake_text((row[2] or '').strip()) if len(row) > 2 else ''
+                    birth_date_raw = (row[3] or '').strip() if len(row) > 3 else ''
+                    mobile_raw = (row[4] or '').strip() if len(row) > 4 else ''
+
+                    first_name = ''
+                    last_name = ''
+                    if full_name:
+                        first_name = full_name
+                        last_name = None
+
+                    birthdate = None
+                    if birth_date_raw:
+                        date_val = str(birth_date_raw).replace('/', '-')
+                        try:
+                            birthdate = datetime.strptime(date_val, '%Y-%m-%d').date()
+                        except Exception:
+                            birthdate = None
+
+                    card_number = _normalize_card(card_no_raw)
+
+                    if not national_code:
+                        continue
+
+                    if len(national_code) > 10:
+                        print(f"national code of {national_code} is too long")
+                        continue
+
+                    if len(card_number) > 16:
+                        print(f"card number of {card_number} is too long")
+                        continue
+
+                    person, created = Person.objects.update_or_create(
+                        defaults={
+                            'first_name': first_name,
+                            'last_name': last_name,
+                            'birthdate': birthdate,
+                            'source': source,
+                        },
+                        national_code=national_code,
+                        source=source,
+                    )
+                    inserted += 1 if created else 0
+                    updated += 0 if created else 1
+
+                    if card_number:
+                        CreditCard.objects.update_or_create(
+                            defaults={'person': person, 'source': source},
+                            card_number=card_number,
+                            source=source,
+                        )
+
+                    if mobile_raw:
+                        mobiles = mobile_raw.split('|')
+                        for mobile in mobiles:
+                            mobile = ''.join(ch for ch in mobile if ch.isdigit())
+                            if mobile:
+                                if mobile[0] != '0':
+                                    mobile = '0' + mobile
+                                PhoneNumber.objects.update_or_create(
+                                    number=mobile,
+                                    person=person,
+                                    source=source,
+                                    defaults={}
+                                )
+                
+        else:
+            raise ValueError('Unsupported file extension. Use .csv or .xlsx')
+        
         return inserted, updated
     except Exception as e:
         print(e)
