@@ -33,8 +33,18 @@ class PersonAdmin(admin.ModelAdmin):
             if form.is_valid():
                 file_path = form.cleaned_data['file_path']
                 source = form.cleaned_data['source']
-                inserted, updated = import_melli_file(file_path=file_path, source=source)
-                messages.success(request, f'Imported successfully: {inserted} inserted, {updated} updated')
+                
+                # Create import job
+                job = ImportJob.objects.create(
+                    source=source,
+                    file_path=file_path,
+                    status=ImportJobStatus.PENDING
+                )
+                
+                # Queue import job
+                import_chunks.delay(job.id)
+                
+                messages.success(request, f'Import job #{job.id} started. Status will be updated in admin panel.')
                 return redirect('..')
         else:
             form = ImportForm()
@@ -68,6 +78,17 @@ class PhoneNumberForm(forms.ModelForm):
             ).values_list('number', flat=True)
             self.initial['numbers'] = '|'.join(numbers)
 
+
+@admin.register(ImportJob)
+class ImportJobAdmin(admin.ModelAdmin):
+    list_display = ('id', 'source', 'file_path', 'status', 'progress_percentage', 'created_at')
+    list_filter = ('status', 'source')
+    readonly_fields = ('progress_percentage',)
+    search_fields = ('file_path',)
+    
+    def progress_percentage(self, obj):
+        return f"{obj.progress_percentage()}%"
+    progress_percentage.short_description = 'Progress'
 
 @admin.register(PhoneNumber)
 class PhoneNumberAdmin(admin.ModelAdmin):
@@ -111,8 +132,15 @@ class PhoneNumberAdmin(admin.ModelAdmin):
 # - CARD_NO may appear in scientific notation in CSV; handle normalization to 16 digits.
 # - FULL_NAME Persian encodings handled; pandas used for robustness.
 # - BIRTH_DATE format like YYYY-MM-DD; we try to parse, else store NULL.
+
+# Import RabbitMQ integration
+from .tasks import process_chunk
+import pika
+import json
+import math
+import os
+
 # Function to encode and decode a single string
-# Define the encode_decode function
 def encode_decode(value, source_encoding):
     if pd.isna(value) or not isinstance(value, str):  # Handle None, NaN, or non-strings
         return value
@@ -120,6 +148,53 @@ def encode_decode(value, source_encoding):
         return value.encode(source_encoding, errors='ignore').decode('utf-8', errors='ignore').strip()
     except (UnicodeEncodeError, UnicodeDecodeError):
         return value.strip()  # Return trimmed original if encoding fails
+
+def import_chunks(job_id):
+    job = ImportJob.objects.get(id=job_id)
+    try:
+        job.status = ImportJobStatus.PROCESSING
+        job.save()
+        
+        # Connect to RabbitMQ
+        credentials = pika.PlainCredentials(
+            os.environ.get('RABBITMQ_DEFAULT_USER', 'guest'),
+            os.environ.get('RABBITMQ_DEFAULT_PASS', 'guest')
+        )
+        parameters = pika.ConnectionParameters(
+            host=os.environ.get('RABBITMQ_HOST', 'rabbitmq'),
+            port=int(os.environ.get('RABBITMQ_PORT', 5672)),
+            credentials=credentials
+        )
+        connection = pika.BlockingConnection(parameters)
+        channel = connection.channel()
+        channel.queue_declare(queue='import_queue', durable=True)
+        
+        # Process file and send chunks to RabbitMQ
+        _, ext = os.path.splitext(job.file_path.lower())
+        chunk_size = 1000  # rows per chunk
+        total_rows = 0
+        
+        if ext in ['.csv', '.txt']:
+            # Count total rows
+            with open(job.file_path, 'r', encoding='utf-8-sig', errors='ignore') as f:
+                total_rows = sum(1 for line in f) - 1  # Subtract header
+            
+            # Calculate total chunks
+            job.total_chunks = math.ceil(total_rows / chunk_size)
+            job.save()
+            
+            # Process in chunks
+            for chunk_index, chunk in enumerate(pd.read_csv(
+                job.file_path,
+                chunksize=chunk_size,
+                header=0,
+                dtype=str,
+                keep_default_na=False,
+                encoding_errors='ignore'
+            )):
+                chunk_data = {
+                    'job_id': job_id,
+                    '
 
 
 def _open_rows(file_path):
