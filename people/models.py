@@ -79,8 +79,8 @@ class PhoneNumber(models.Model):
 			models.Index(fields=['number', 'person', 'source'], name='idx_phone_num_per_src')
 		]
 
-    def __str__(self) -> str:
-        return self.number
+	def __str__(self) -> str:
+		return self.number
 
 
 class ImportJobStatus(models.TextChoices):

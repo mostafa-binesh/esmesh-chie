@@ -2,7 +2,7 @@ from django.contrib import admin, messages
 from django.urls import path
 from django import forms
 from django.shortcuts import redirect, render
-from .models import Person, CreditCard, PhoneNumber, Source
+from .models import Person, CreditCard, PhoneNumber, Source, ImportJob
 import csv
 from datetime import datetime
 import os
@@ -172,7 +172,6 @@ def import_chunks(job_id):
         # Process file and send chunks to RabbitMQ
         _, ext = os.path.splitext(job.file_path.lower())
         chunk_size = 1000  # rows per chunk
-        total_rows = 0
         
         if ext in ['.csv', '.txt']:
             # Count total rows
@@ -192,9 +191,69 @@ def import_chunks(job_id):
                 keep_default_na=False,
                 encoding_errors='ignore'
             )):
+                # Convert chunk to list of dictionaries
+                records = chunk.to_dict(orient='records')
                 chunk_data = {
                     'job_id': job_id,
-                    '
+                    'source': job.source,
+                    'chunk_index': chunk_index,
+                    'total_chunks': job.total_chunks,
+                    'rows': records
+                }
+                # Send chunk to RabbitMQ
+                channel.basic_publish(
+                    exchange='',
+                    routing_key='import_queue',
+                    body=json.dumps(chunk_data),
+                    properties=pika.BasicProperties(
+                        delivery_mode=2,  # make message persistent
+                    )
+                )
+        
+        elif ext in ['.xlsx', '.xlsm']:
+            # Read entire Excel file
+            df = pd.read_excel(
+                job.file_path,
+                dtype=str,
+                keep_default_na=False,
+                engine='openpyxl'
+            )
+            total_rows = len(df)
+            job.total_chunks = math.ceil(total_rows / chunk_size)
+            job.save()
+            
+            # Process in chunks
+            for i in range(0, total_rows, chunk_size):
+                chunk = df[i:i + chunk_size]
+                records = chunk.to_dict(orient='records')
+                chunk_data = {
+                    'job_id': job_id,
+                    'source': job.source,
+                    'chunk_index': i // chunk_size,
+                    'total_chunks': job.total_chunks,
+                    'rows': records
+                }
+                # Send chunk to RabbitMQ
+                channel.basic_publish(
+                    exchange='',
+                    routing_key='import_queue',
+                    body=json.dumps(chunk_data),
+                    properties=pika.BasicProperties(
+                        delivery_mode=2,  # make message persistent
+                    )
+                )
+        
+        else:
+            raise ValueError('Unsupported file extension. Use .csv or .xlsx')
+        
+        connection.close()
+        return job.total_chunks
+        
+    except Exception as e:
+        job.status = ImportJobStatus.FAILED
+        job.error_message = str(e)
+        job.save()
+        raise
 
 
 def _open_rows(file_path):
