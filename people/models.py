@@ -81,3 +81,33 @@ class PhoneNumber(models.Model):
 
 	def __str__(self) -> str:
 		return self.number
+
+
+class ImportJobStatus(models.TextChoices):
+    PENDING = 'PENDING', 'Pending'
+    PROCESSING = 'PROCESSING', 'Processing'
+    COMPLETED = 'COMPLETED', 'Completed'
+    FAILED = 'FAILED', 'Failed'
+
+
+class ImportJob(models.Model):
+    source = models.CharField(max_length=32, choices=Source.choices)
+    file_path = models.CharField(max_length=500)
+    status = models.CharField(
+        max_length=20, 
+        choices=ImportJobStatus.choices, 
+        default=ImportJobStatus.PENDING
+    )
+    total_chunks = models.IntegerField(default=0)
+    processed_chunks = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    error_message = models.TextField(blank=True, null=True)
+
+    def progress_percentage(self):
+        if self.total_chunks > 0:
+            return round((self.processed_chunks / self.total_chunks) * 100)
+        return 0
+
+    def __str__(self):
+        return f"ImportJob {self.id} - {self.source} - {self.status}"
