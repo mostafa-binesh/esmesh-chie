@@ -41,8 +41,10 @@ class PersonAdmin(admin.ModelAdmin):
                     status=ImportJobStatus.PENDING
                 )
                 
-                # Queue import job
-                import_chunks.delay(job.id)
+                # Queue import job in a new thread
+                import threading
+                thread = threading.Thread(target=import_chunks, args=(job.id,))
+                thread.start()
                 
                 messages.success(request, f'Import job #{job.id} started. Status will be updated in admin panel.')
                 return redirect('..')
@@ -139,6 +141,7 @@ import pika
 import json
 import math
 import os
+import threading
 
 # Function to encode and decode a single string
 def encode_decode(value, source_encoding):
