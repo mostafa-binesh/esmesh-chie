@@ -33,7 +33,7 @@ ALLOWED_HOSTS = ['admin.naftkhabar.com',
                   '127.0.0.1',
                   '192.168.1.10',
                   '65.109.189.219',
-                  f'65.109.189.219:{os.environ.get('APP_PORT', '8001')}'
+                  f'65.109.189.219:{os.environ.get('HOST_PORT', '8001')}'
                   ]
 
 from corsheaders.defaults import default_headers
@@ -45,7 +45,7 @@ cors_list = [
     'http://localhost:3000',
     'http://localhost:3001',
     'http://localhost:8000',
-    f'http://localhost:{os.environ.get('APP_PORT', '8001')}',
+    f'http://localhost:{os.environ.get('HOST_PORT', '8001')}',
     'http://localhost:8005',
     'http://localhost:6573',
 
@@ -58,7 +58,7 @@ cors_list = [
     'http://192.168.1.10',
     'http://192.168.1.26',
     'http://65.109.189.219',
-    f'http://65.109.189.219:{os.environ.get('APP_PORT', '8001')}'
+    f'http://65.109.189.219:{os.environ.get('HOST_PORT', '8001')}'
 ]
 CORS_ALLOW_CREDENTIALS = True  # Allow credentials to be included with requests
 CORS_ORIGIN_WHITELIST = cors_list  # Ensure this only lists allowed origins
