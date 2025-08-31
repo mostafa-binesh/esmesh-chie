@@ -2,7 +2,7 @@ from django.contrib import admin, messages
 from django.urls import path
 from django import forms
 from django.shortcuts import redirect, render
-from .models import Person, CreditCard, PhoneNumber, Source, ImportJob
+from .models import Person, CreditCard, PhoneNumber, Source, ImportJob, ImportJobStatus
 import csv
 from datetime import datetime
 import os
