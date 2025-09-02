@@ -2,7 +2,7 @@ from django.contrib import admin, messages
 from django.urls import path
 from django import forms
 from django.shortcuts import redirect, render
-from .models import Person, CreditCard, PhoneNumber, Source
+from .models import Person, CreditCard, PhoneNumber, Source, ImportJob, ImportJobStatus
 import csv
 from datetime import datetime
 import os
@@ -33,8 +33,20 @@ class PersonAdmin(admin.ModelAdmin):
             if form.is_valid():
                 file_path = form.cleaned_data['file_path']
                 source = form.cleaned_data['source']
-                inserted, updated = import_melli_file(file_path=file_path, source=source)
-                messages.success(request, f'Imported successfully: {inserted} inserted, {updated} updated')
+                
+                # Create import job
+                job = ImportJob.objects.create(
+                    source=source,
+                    file_path=file_path,
+                    status=ImportJobStatus.PENDING
+                )
+                
+                # Queue import job in a new thread
+                import threading
+                thread = threading.Thread(target=import_chunks, args=(job.id,))
+                thread.start()
+                
+                messages.success(request, f'Import job #{job.id} started. Status will be updated in admin panel.')
                 return redirect('..')
         else:
             form = ImportForm()
@@ -68,6 +80,17 @@ class PhoneNumberForm(forms.ModelForm):
             ).values_list('number', flat=True)
             self.initial['numbers'] = '|'.join(numbers)
 
+
+@admin.register(ImportJob)
+class ImportJobAdmin(admin.ModelAdmin):
+    list_display = ('id', 'source', 'file_path', 'status', 'progress_percentage', 'created_at')
+    list_filter = ('status', 'source')
+    readonly_fields = ('progress_percentage',)
+    search_fields = ('file_path',)
+    
+    def progress_percentage(self, obj):
+        return f"{obj.progress_percentage()}%"
+    progress_percentage.short_description = 'Progress'
 
 @admin.register(PhoneNumber)
 class PhoneNumberAdmin(admin.ModelAdmin):
@@ -111,8 +134,16 @@ class PhoneNumberAdmin(admin.ModelAdmin):
 # - CARD_NO may appear in scientific notation in CSV; handle normalization to 16 digits.
 # - FULL_NAME Persian encodings handled; pandas used for robustness.
 # - BIRTH_DATE format like YYYY-MM-DD; we try to parse, else store NULL.
+
+# Import RabbitMQ integration
+from .tasks import process_chunk
+import pika
+import json
+import math
+import os
+import threading
+
 # Function to encode and decode a single string
-# Define the encode_decode function
 def encode_decode(value, source_encoding):
     if pd.isna(value) or not isinstance(value, str):  # Handle None, NaN, or non-strings
         return value
@@ -120,6 +151,112 @@ def encode_decode(value, source_encoding):
         return value.encode(source_encoding, errors='ignore').decode('utf-8', errors='ignore').strip()
     except (UnicodeEncodeError, UnicodeDecodeError):
         return value.strip()  # Return trimmed original if encoding fails
+
+def import_chunks(job_id):
+    job = ImportJob.objects.get(id=job_id)
+    try:
+        job.status = ImportJobStatus.PROCESSING
+        job.save()
+        
+        # Connect to RabbitMQ
+        credentials = pika.PlainCredentials(
+            os.environ.get('RABBITMQ_DEFAULT_USER', 'guest'),
+            os.environ.get('RABBITMQ_DEFAULT_PASS', 'guest')
+        )
+        parameters = pika.ConnectionParameters(
+            host=os.environ.get('RABBITMQ_HOST', 'rabbitmq'),
+            port=int(os.environ.get('RABBITMQ_PORT', 5672)),
+            credentials=credentials
+        )
+        connection = pika.BlockingConnection(parameters)
+        channel = connection.channel()
+        channel.queue_declare(queue='import_queue', durable=True)
+        
+        # Process file and send chunks to RabbitMQ
+        _, ext = os.path.splitext(job.file_path.lower())
+        chunk_size = 1000  # rows per chunk
+        
+        if ext in ['.csv', '.txt']:
+            # Count total rows
+            with open(job.file_path, 'r', encoding='utf-8-sig', errors='ignore') as f:
+                total_rows = sum(1 for line in f) - 1  # Subtract header
+            
+            # Calculate total chunks
+            job.total_chunks = math.ceil(total_rows / chunk_size)
+            job.save()
+            
+            # Process in chunks
+            for chunk_index, chunk in enumerate(pd.read_csv(
+                job.file_path,
+                chunksize=chunk_size,
+                header=0,
+                dtype=str,
+                keep_default_na=False,
+                encoding_errors='ignore'
+            )):
+                # Convert chunk to list of dictionaries
+                records = chunk.to_dict(orient='records')
+                chunk_data = {
+                    'job_id': job_id,
+                    'source': job.source,
+                    'chunk_index': chunk_index,
+                    'total_chunks': job.total_chunks,
+                    'rows': records
+                }
+                # Send chunk to RabbitMQ
+                channel.basic_publish(
+                    exchange='',
+                    routing_key='import_queue',
+                    body=json.dumps(chunk_data),
+                    properties=pika.BasicProperties(
+                        delivery_mode=2,  # make message persistent
+                    )
+                )
+        
+        elif ext in ['.xlsx', '.xlsm']:
+            # Read entire Excel file
+            df = pd.read_excel(
+                job.file_path,
+                dtype=str,
+                keep_default_na=False,
+                engine='openpyxl'
+            )
+            total_rows = len(df)
+            job.total_chunks = math.ceil(total_rows / chunk_size)
+            job.save()
+            
+            # Process in chunks
+            for i in range(0, total_rows, chunk_size):
+                chunk = df[i:i + chunk_size]
+                records = chunk.to_dict(orient='records')
+                chunk_data = {
+                    'job_id': job_id,
+                    'source': job.source,
+                    'chunk_index': i // chunk_size,
+                    'total_chunks': job.total_chunks,
+                    'rows': records
+                }
+                # Send chunk to RabbitMQ
+                channel.basic_publish(
+                    exchange='',
+                    routing_key='import_queue',
+                    body=json.dumps(chunk_data),
+                    properties=pika.BasicProperties(
+                        delivery_mode=2,  # make message persistent
+                    )
+                )
+        
+        else:
+            raise ValueError('Unsupported file extension. Use .csv or .xlsx')
+        
+        connection.close()
+        return job.total_chunks
+        
+    except Exception as e:
+        job.status = ImportJobStatus.FAILED
+        job.error_message = str(e)
+        job.save()
+        raise
 
 
 def _open_rows(file_path):

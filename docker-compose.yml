@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+  # Existing services
   db:
     image: postgres:13
     container_name: esmesh_chie_db
@@ -11,17 +12,32 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data/
     ports:
-      - "5433:5432"  # Map host port 5433 to container port 5432
+      - "${POSTGRES_PUBLIC_PORT}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
 
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: esmesh_chie_rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-guest}
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+
   web:
     build: .
     container_name: esmesh_chie_web
-    command: python manage.py runserver 0.0.0.0:8001
+    command: python manage.py runserver 0.0.0.0:${APP_PORT:-8001}
     ports:
       - "${HOST_PORT:-8001}:${APP_PORT:-8001}"
     environment:
@@ -83,7 +99,7 @@ services:
     image: grafana/grafana
     container_name: esmesh_chie_grafana
     ports:
-      - "8002:8002"
+      - "3000:3000"
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
@@ -105,3 +121,5 @@ services:
 
 volumes:
   postgres_data:
+  prometheus_data:
+  grafana_data:
