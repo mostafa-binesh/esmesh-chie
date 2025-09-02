@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+  # Existing services
   db:
     image: postgres:13
     container_name: esmesh_chie_db
@@ -80,5 +81,45 @@ services:
       rabbitmq:
         condition: service_healthy
 
+  # Monitoring services
+  prometheus:
+    image: prom/prometheus
+    container_name: esmesh_chie_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    depends_on:
+      - db
+
+  grafana:
+    image: grafana/grafana
+    container_name: esmesh_chie_grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - prometheus
+
+  postgres-exporter:
+    image: wrouesnel/postgres_exporter
+    container_name: esmesh_chie_postgres_exporter
+    environment:
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?sslmode=disable
+    ports:
+      - "9187:9187"
+    depends_on:
+      - db
+
 volumes:
   postgres_data:
+  prometheus_data:
+  grafana_data:
