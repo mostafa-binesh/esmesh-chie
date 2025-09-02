@@ -115,7 +115,7 @@ services:
     environment:
       DATA_SOURCE_URI: "db:5432/${POSTGRES_DB}?sslmode=disable"
       DATA_SOURCE_USER: ${POSTGRES_USER}
-      DATA_SOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      DATA_SOURCE_PASS: ${POSTGRES_PASSWORD}
     ports:
       - "9187:9187"
     depends_on:
