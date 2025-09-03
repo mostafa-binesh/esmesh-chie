@@ -99,7 +99,7 @@ services:
     image: grafana/grafana
     container_name: esmesh_chie_grafana
     ports:
-      - "8002:8002"
+      - "3001:3000"
     volumes:
       - grafana_data:/var/lib/grafana
       # - ./grafana/provisioning:/etc/grafana/provisioning
