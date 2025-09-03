@@ -3,7 +3,7 @@ version: '3.8'
 services:
   # Existing services
   db:
-    image: postgres:13
+    image: postgres:17
     container_name: esmesh_chie_db
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
